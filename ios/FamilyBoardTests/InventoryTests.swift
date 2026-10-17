@@ -214,6 +214,88 @@ final class InventoryTests: XCTestCase {
         }
     }
 
+    func testBarcodeLookupEncodesCodeAndNeverCreatesInventory() async throws {
+        InventoryStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.absoluteString, "https://family.example.com/api/inventory/barcode/00%2F12%3F%23%25")
+            return (200, #"{"barcode":"00/12?#%","name":"Rice","category":"Grains","unit":"bag","source":"memory"}"#)
+        }
+        let product = try await service.lookupBarcode(" 00/12?#% ")
+        XCTAssertEqual(product.name, "Rice")
+        XCTAssertEqual(product.barcode, "00/12?#%")
+        XCTAssertEqual(product.source, "memory")
+    }
+
+    func testPhotoUploadUsesMultipartPhotoFieldAndDeletionReturnsUpdatedItem() async throws {
+        let bytes = Data([0xff, 0xd8, 0x00, 0xff, 0xd9])
+        InventoryStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/inventory/item-1/photo")
+            XCTAssertNotNil(request.value(forHTTPHeaderField: "Authorization"))
+            XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("multipart/form-data; boundary=") == true)
+            let data = try Self.rawBody(request)
+            let header = Data("Content-Disposition: form-data; name=\"photo\"; filename=\"inventory.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8)
+            XCTAssertNotNil(data.range(of: header + bytes))
+            return (200, Self.itemJSON().replacingOccurrences(
+                of: #""photoUrl":null"#, with: #""photoUrl":"/uploads/photo.jpg""#
+            ))
+        }
+        let saved = try await service.uploadPhoto(id: "item-1", data: bytes)
+        XCTAssertEqual(saved.photoUrl, "/uploads/photo.jpg")
+        InventoryStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            XCTAssertEqual(request.url?.path, "/api/inventory/item-1/photo")
+            return (200, Self.itemJSON())
+        }
+        let deleted = try await service.deletePhoto(id: "item-1")
+        XCTAssertNil(deleted.photoUrl)
+    }
+
+    func testInvalidCaptureInputNeverSendsRequests() async throws {
+        InventoryStubURLProtocol.handler = { _ in
+            XCTFail("Invalid capture input must not reach server")
+            return (200, Self.itemJSON())
+        }
+        for code in [" ", String(repeating: "1", count: 129), "123\u{0}4"] {
+            do {
+                _ = try await service.lookupBarcode(code)
+                XCTFail("Expected invalid barcode")
+            } catch is InventoryValidationError {}
+        }
+        for data in [Data(), Data(repeating: 0, count: InventoryPhoto.maximumBytes + 1)] {
+            do {
+                _ = try await service.uploadPhoto(id: "item-1", data: data)
+                XCTFail("Expected invalid photo")
+            } catch is InventoryValidationError {}
+        }
+    }
+
+    func testPhotoSizeLimitIncludesExactlyTenMegabytes() async throws {
+        InventoryStubURLProtocol.handler = { _ in (200, Self.itemJSON()) }
+        _ = try await service.uploadPhoto(id: "item-1", data: Data(repeating: 0, count: InventoryPhoto.maximumBytes))
+    }
+
+    func testCaptureServerErrorsAreNotReportedAsSuccessfulUpdates() async throws {
+        for status in [401, 403, 404, 413, 500] {
+            InventoryStubURLProtocol.handler = { _ in (status, #"{"error":"Capture unavailable"}"#) }
+            for operation in 0..<3 {
+                do {
+                    switch operation {
+                    case 0: _ = try await service.lookupBarcode("0012345")
+                    case 1: _ = try await service.uploadPhoto(id: "item-1", data: Data([1]))
+                    default: _ = try await service.deletePhoto(id: "item-1")
+                    }
+                    XCTFail("Expected capture error")
+                } catch APIError.unauthorized {
+                    XCTAssertTrue([401, 403].contains(status))
+                } catch APIError.server(let code, let message) {
+                    XCTAssertEqual(code, status)
+                    XCTAssertEqual(message, "Capture unavailable")
+                }
+            }
+        }
+    }
+
     private static func itemJSON(purchaseDate: String = "2026-10-20T00:00:00.000Z") -> String {
         """
         {"id":"item-1","name":"Rice","quantity":1.5,"unit":null,"category":"General",
@@ -224,6 +306,10 @@ final class InventoryTests: XCTestCase {
     }
 
     private static func body(_ request: URLRequest) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: rawBody(request)) as? [String: Any])
+    }
+
+    private static func rawBody(_ request: URLRequest) throws -> Data {
         let data: Data
         if let body = request.httpBody { data = body }
         else {
@@ -240,7 +326,7 @@ final class InventoryTests: XCTestCase {
             }
             data = result
         }
-        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return data
     }
 }
 

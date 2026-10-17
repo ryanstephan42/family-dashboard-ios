@@ -81,6 +81,7 @@ struct InventoryDraft: Equatable {
     var expirationDate = Date()
     var notes = ""
     var parLevel = ""
+    var barcode = ""
 
     init(item: InventoryItem? = nil) {
         guard let item else { return }
@@ -95,10 +96,14 @@ struct InventoryDraft: Equatable {
         expirationDate = item.expirationDate ?? Date()
         notes = item.notes ?? ""
         parLevel = item.parLevel.map { String($0) } ?? ""
+        barcode = item.barcode ?? ""
     }
 
     var validationMessage: String? {
         if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Enter an item name." }
+        if barcode.count > 128 || barcode.rangeOfCharacter(from: .controlCharacters) != nil {
+            return "Enter a barcode of up to 128 characters without control characters."
+        }
         guard let count = Double(quantity), count.isFinite, count >= 0 else {
             return "Quantity must be a nonnegative number."
         }
@@ -131,7 +136,8 @@ struct InventoryDraft: Equatable {
             trackExpiration: trackExpiration,
             expirationDate: trackExpiration && hasExpirationDate ? expirationDate : nil,
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
-            parLevel: Double(parLevel)
+            parLevel: Double(parLevel),
+            barcode: barcode.trimmingCharacters(in: .whitespacesAndNewlines)
         )
     }
 }
@@ -152,10 +158,11 @@ struct InventoryWrite: Encodable {
     let expirationDate: Date?
     let notes: String
     let parLevel: Double?
+    let barcode: String
 
     enum CodingKeys: String, CodingKey {
         case name, quantity, unit, category, location, purchaseDate
-        case trackExpiration, expirationDate, notes, parLevel
+        case trackExpiration, expirationDate, notes, parLevel, barcode
     }
 
     func encode(to encoder: Encoder) throws {
@@ -173,5 +180,6 @@ struct InventoryWrite: Encodable {
         try c.encode(expirationDate.map { formatter.string(from: $0) }, forKey: .expirationDate)
         try c.encode(notes, forKey: .notes)
         try c.encode(parLevel, forKey: .parLevel)
+        if !barcode.isEmpty { try c.encode(barcode, forKey: .barcode) }
     }
 }

@@ -6,18 +6,23 @@ struct InventoryEditorView: View {
     let item: InventoryItem?
     let units: InventoryUnitOptions
     let categories: [String]
+    let onPhotoChanged: (InventoryItem) -> Void
     let save: (InventoryDraft) async throws -> Void
     @State private var draft: InventoryDraft
     @State private var saving = false
     @State private var errorMessage: String?
     @State private var confirmDiscard = false
     @State private var changed = false
+    @State private var captureBusy = false
+    @State private var showingBarcode = false
 
     init(item: InventoryItem?, units: InventoryUnitOptions, categories: [String],
+         onPhotoChanged: @escaping (InventoryItem) -> Void,
          save: @escaping (InventoryDraft) async throws -> Void) {
         self.item = item
         self.units = units
         self.categories = categories
+        self.onPhotoChanged = onPhotoChanged
         self.save = save
         _draft = State(initialValue: InventoryDraft(item: item))
     }
@@ -27,6 +32,18 @@ struct InventoryEditorView: View {
             Form {
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundStyle(.red).accessibilityLabel("Error: \(errorMessage)") }
+                }
+                if item == nil {
+                    Section {
+                        Button("Look up a barcode", systemImage: "barcode.viewfinder") { showingBarcode = true }
+                        TextField("Barcode (optional)", text: $draft.barcode)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    } footer: {
+                        Text("Lookup fills the name, category and unit below for review. Nothing is added until you tap Save.")
+                    }
+                } else if !draft.barcode.isEmpty {
+                    Section("Barcode") { Text(draft.barcode).textSelection(.enabled) }
                 }
                 Section("Item") {
                     TextField("Name", text: $draft.name)
@@ -83,11 +100,23 @@ struct InventoryEditorView: View {
                     TextField("Notes (optional)", text: $draft.notes, axis: .vertical)
                         .lineLimit(3...6)
                 }
+                if let item {
+                    InventoryPhotoEditor(item: item, busy: $captureBusy, onChanged: onPhotoChanged)
+                } else {
+                    Section("Photo") {
+                        Text("Save the new item, then open it to attach a library or camera photo.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 if let validation = draft.validationMessage {
                     Section { Text(validation).font(.caption).foregroundStyle(.secondary) }
                 }
             }
-            .disabled(saving)
+            .disabled(saving || captureBusy)
+            .sheet(isPresented: $showingBarcode) {
+                InventoryBarcodeView { product in draft.apply(product) }
+                    .environmentObject(session)
+            }
             .onChange(of: draft) { _, _ in changed = true }
             .navigationTitle(item == nil ? "Add inventory" : "Edit inventory")
             .navigationBarTitleDisplayMode(.inline)
@@ -95,7 +124,7 @@ struct InventoryEditorView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         if changed { confirmDiscard = true } else { dismiss() }
-                    }.disabled(saving)
+                    }.disabled(saving || captureBusy)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -103,10 +132,10 @@ struct InventoryEditorView: View {
                     } label: {
                         if saving { ProgressView("Saving") } else { Text("Save") }
                     }
-                    .disabled(saving || draft.validationMessage != nil)
+                    .disabled(saving || captureBusy || draft.validationMessage != nil)
                 }
             }
-            .interactiveDismissDisabled(changed || saving)
+            .interactiveDismissDisabled(changed || saving || captureBusy)
             .confirmationDialog("Discard changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
                 Button("Discard changes", role: .destructive) { dismiss() }
                 Button("Keep editing", role: .cancel) {}
@@ -122,8 +151,9 @@ struct InventoryEditorView: View {
         do {
             try await save(draft)
             dismiss()
+        } catch APIError.unauthorized {
+            return
         } catch {
-            if case APIError.unauthorized = error { session.logout() }
             errorMessage = error.localizedDescription
         }
     }
