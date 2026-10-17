@@ -203,72 +203,72 @@ struct GroceryListView: View {
             ForEach(suggestions, id: \.name) { suggestion in
                 suggestionRow(suggestion)
             }
+        }
+    }
 
-            @ViewBuilder
-            private var listContents: some View {
-                if isLoading && items.isEmpty && loadError == nil {
-                    HStack {
-                        Spacer()
-                        ProgressView("Loading groceries")
-                        Spacer()
-                    }
-                    .listRowSeparator(.hidden)
-                } else if let loadError {
-                    loadErrorSection(loadError)
-                } else {
-                    loadedListContents
-                }
+    @ViewBuilder
+    private var listContents: some View {
+        if isLoading && items.isEmpty && loadError == nil {
+            HStack {
+                Spacer()
+                ProgressView("Loading groceries")
+                Spacer()
             }
+            .listRowSeparator(.hidden)
+        } else if let loadError {
+            loadErrorSection(loadError)
+        } else {
+            loadedListContents
+        }
+    }
 
-            private func loadErrorSection(_ message: String) -> some View {
-                Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Couldn't load groceries", systemImage: "exclamationmark.triangle")
-                            .font(.headline)
-                        Text(message)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Button("Retry") {
-                            Task { await load() }
-                        }
-                        .accessibilityHint("Try loading the grocery list again")
-                    }
-                    .padding(.vertical, 8)
+    private func loadErrorSection(_ message: String) -> some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Couldn't load groceries", systemImage: "exclamationmark.triangle")
+                    .font(.headline)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Button("Retry") {
+                    Task { await load() }
                 }
+                .accessibilityHint("Try loading the grocery list again")
             }
+            .padding(.vertical, 8)
+        }
+    }
 
-            @ViewBuilder
-            private var loadedListContents: some View {
-                if !suggestions.isEmpty {
-                    suggestionsSection
-                }
+    @ViewBuilder
+    private var loadedListContents: some View {
+        if !suggestions.isEmpty {
+            suggestionsSection
+        }
 
-                if items.isEmpty {
-                    ContentUnavailableView(
-                        "No groceries yet",
-                        systemImage: "cart",
-                        description: Text("Add an item or choose a low-stock suggestion.")
-                    )
-                    .listRowSeparator(.hidden)
-                } else {
-                    groceryItemSections
-                }
-            }
+        if items.isEmpty {
+            ContentUnavailableView(
+                "No groceries yet",
+                systemImage: "cart",
+                description: Text("Add an item or choose a low-stock suggestion.")
+            )
+            .listRowSeparator(.hidden)
+        } else {
+            groceryItemSections
+        }
+    }
 
-            private var groceryItemSections: some View {
-                ForEach(groupedItems, id: \.category) { group in
-                    groceryCategorySection(group)
-                }
-            }
+    private var groceryItemSections: some View {
+        ForEach(groupedItems, id: \.category) { group in
+            groceryCategorySection(group)
+        }
+    }
 
-            private func groceryCategorySection(
-                _ group: (category: String, items: [GroceryItem])
-            ) -> some View {
-                Section(group.category) {
-                    ForEach(group.items) { item in
-                        groceryRow(item)
-                    }
-                }
+    private func groceryCategorySection(
+        _ group: (category: String, items: [GroceryItem])
+    ) -> some View {
+        Section(group.category) {
+            ForEach(group.items) { item in
+                groceryRow(item)
             }
         }
     }
