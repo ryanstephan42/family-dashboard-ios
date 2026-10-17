@@ -8,6 +8,8 @@ struct ReceiptScanView: View {
     @StateObject private var model: ReceiptScanModel
     @State private var photo: PhotosPickerItem?
     @State private var importingFile = false
+    @State private var showingCamera = false
+    @State private var openingCamera = false
     @State private var operation: Task<Void, Never>?
     let onImported: () -> Void
 
@@ -49,11 +51,11 @@ struct ReceiptScanView: View {
             }
         }
         .navigationTitle("Scan Receipt")
-        .navigationBarBackButtonHidden(model.busy)
-        .interactiveDismissDisabled(model.busy)
+        .navigationBarBackButtonHidden(model.busy || openingCamera)
+        .interactiveDismissDisabled(model.busy || openingCamera)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Close") { dismiss() }.disabled(model.busy)
+                Button("Close") { dismiss() }.disabled(model.busy || openingCamera)
             }
         }
         .onChange(of: photo) { _, selection in
@@ -82,6 +84,16 @@ struct ReceiptScanView: View {
                         return try Self.receiptImage(Data(contentsOf: url))
                     }
                 }
+                .sheet(isPresented: $showingCamera) {
+                    InventoryCameraPicker { image in
+                        showingCamera = false
+                        guard let image else { return }
+                        operation = Task {
+                            await model.loadImage { try Self.receiptImage(image) }
+                        }
+                    }
+                    .ignoresSafeArea()
+                }
             case .failure(let error):
                 model.error = error.localizedDescription
             }
@@ -96,6 +108,9 @@ struct ReceiptScanView: View {
 
     private var sourceSection: some View {
         Section {
+            Button("Take Receipt Photo", systemImage: "camera") {
+                operation = Task { await openCamera() }
+            }
             PhotosPicker(selection: $photo, matching: .images, preferredItemEncoding: .compatible) {
                 Label("Choose Receipt Photo", systemImage: "photo")
             }
@@ -115,7 +130,7 @@ struct ReceiptScanView: View {
         } footer: {
             Text("Nothing uploads until you tap Scan Receipt. Your server may use a cloud AI service to read the image. Review all results before saving. PDF receipts are not supported.")
         }
-        .disabled(model.busy)
+        .disabled(model.busy || openingCamera)
     }
 
     private var reviewSection: some View {
@@ -171,10 +186,46 @@ struct ReceiptScanView: View {
 
     private static func receiptImage(_ data: Data) throws -> ReceiptImage {
         guard data.count <= ReceiptImage.maximumBytes,
-              let image = UIImage(data: data),
-              let jpeg = image.jpegData(compressionQuality: 0.85) else {
+              let image = UIImage(data: data) else {
             throw ReceiptError.validation("Choose a readable receipt image smaller than 15 MB.")
         }
+        return try receiptImage(image)
+    }
+
+    static func receiptImage(_ image: UIImage) throws -> ReceiptImage {
+        guard image.size.width > 0, image.size.height > 0 else {
+            throw ReceiptError.validation("The receipt image has invalid dimensions.")
+        }
+        let scale = min(1, 4096 / max(image.size.width, image.size.height))
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let normalized = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        guard let jpeg = normalized.jpegData(compressionQuality: 0.85) else {
+            throw ReceiptError.validation("The receipt could not be prepared for scanning.")
+        }
         return try ReceiptImage(jpegData: jpeg)
+    }
+
+    @MainActor private func openCamera() async {
+        guard !model.busy, !openingCamera else { return }
+        openingCamera = true
+        model.error = nil
+        defer { openingCamera = false }
+        do {
+            guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+                throw ReceiptError.validation("This device has no available camera. Choose a receipt photo or file instead.")
+            }
+            try await InventoryCameraAccess.authorize()
+            try Task.checkCancellation()
+            showingCamera = true
+        } catch {
+            if !Task.isCancelled { model.error = error.localizedDescription }
+        }
     }
 }

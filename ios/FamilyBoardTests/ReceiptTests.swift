@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import FamilyBoard
 
 final class ReceiptTests: XCTestCase {
@@ -78,6 +79,24 @@ final class ReceiptTests: XCTestCase {
         XCTAssertThrowsError(try ReceiptImage(
             jpegData: Data(repeating: 0, count: ReceiptImage.maximumBytes + 1)
         ))
+    }
+
+    @MainActor
+    func testCapturedImageIsNormalizedToBoundedJPEG() throws {
+        XCTAssertThrowsError(try ReceiptScanView.receiptImage(UIImage()))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let original = UIGraphicsImageRenderer(size: CGSize(width: 4500, height: 100), format: format)
+            .image { context in
+                UIColor.white.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 4500, height: 100))
+            }
+        let receipt = try ReceiptScanView.receiptImage(original)
+        let decoded = try XCTUnwrap(UIImage(data: receipt.data))
+        XCTAssertEqual(decoded.size.width, 4096)
+        XCTAssertEqual(decoded.imageOrientation, .up)
+        XCTAssertEqual(Array(receipt.data.prefix(2)), [0xFF, 0xD8])
+        XCTAssertLessThanOrEqual(receipt.data.count, ReceiptImage.maximumBytes)
     }
 
     func testScanUsesReceiptMultipartContract() async throws {
