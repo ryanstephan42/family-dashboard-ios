@@ -86,7 +86,7 @@ struct InventoryListView: View {
         .refreshable { await load() }
         .task { if !loaded { await load() } }
         .sheet(item: $editor) { selection in
-            InventoryEditorView(item: selection.item, units: units, categories: categories) { draft in
+            InventoryEditorView(item: selection.item, units: units, categories: categories, onPhotoChanged: replace) { draft in
                 guard let client = session.client else { throw APIError.unauthorized }
                 let service = InventoryService(client: client)
                 if let item = selection.item {
@@ -130,6 +130,9 @@ struct InventoryListView: View {
         VStack(alignment: .leading, spacing: 8) {
             Button { editor = InventoryEditorSelection(item: item) } label: {
                 VStack(alignment: .leading, spacing: 4) {
+                    if let server = session.client?.baseURL, item.photoUrl != nil {
+                        InventoryPhotoView(path: item.photoUrl, server: server)
+                    }
                     Text(item.name).font(.headline)
                     Text("\(item.quantity.formatted()) \(item.unit ?? "") • \(item.location)")
                         .font(.subheadline).foregroundStyle(.secondary)
@@ -171,7 +174,6 @@ struct InventoryListView: View {
         guard !loading, !busy else { return }
         guard let client = session.client else {
             errorMessage = APIError.unauthorized.localizedDescription
-            session.logout()
             return
         }
         loading = true
@@ -218,7 +220,7 @@ struct InventoryListView: View {
     }
 
     @MainActor private func handle(_ error: Error) {
-        if case APIError.unauthorized = error { session.logout() }
+        if case APIError.unauthorized = error { return }
         errorMessage = error.localizedDescription
     }
 }

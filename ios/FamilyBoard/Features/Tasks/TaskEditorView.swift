@@ -140,7 +140,7 @@ struct TaskEditorView: View {
             users = try await TaskService(client: client).users()
             usersError = nil
         } catch APIError.unauthorized {
-            session.logout()
+            return
         } catch {
             usersError = error.localizedDescription
         }
@@ -155,7 +155,7 @@ struct TaskEditorView: View {
             dismiss()
             await onSaved()
         } catch APIError.unauthorized {
-            session.logout()
+            return
         } catch {
             self.error = error.localizedDescription
         }
