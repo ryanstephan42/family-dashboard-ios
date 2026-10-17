@@ -60,7 +60,7 @@ struct APIClient {
         }
         var req = URLRequest(url: url)
         req.httpMethod = method
-        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let token { req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try JSONEncoder().encode(AnyEncodable(body))

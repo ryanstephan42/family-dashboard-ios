@@ -18,3 +18,20 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Family Board
         SWIFT_VERSION: "5.0"
         CODE_SIGN_STYLE: Automatic
+  FamilyBoardTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [FamilyBoardTests]
+    dependencies:
+      - target: FamilyBoard
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+schemes:
+  FamilyBoard:
+    build:
+      targets:
+        FamilyBoard: all
+    test:
+      targets: [FamilyBoardTests]
