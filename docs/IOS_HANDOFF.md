@@ -1,5 +1,9 @@
 # Handoff: context for the `family-dashboard-ios` repo
 
+> Historical bootstrap handoff, retained for the original decisions below.
+> The scaffold status and roadmap are not the current implementation status.
+> See [README](../README.md) and [release acceptance](RELEASE_CHECKLIST.md).
+
 Copy this file into the new repo as `.github/copilot-instructions.md` (so the
 Copilot agent reads it automatically) and also as `AGENTS.md`/`README.md` if
 you like. Also copy `ios/` (project.yml and FamilyBoard/ sources) to the repo

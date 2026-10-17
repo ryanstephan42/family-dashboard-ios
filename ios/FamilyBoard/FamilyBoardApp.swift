@@ -37,23 +37,3 @@ struct RootView: View {
         }
     }
 }
-
-private enum AppTab: Hashable {
-    case tasks
-    case settings
-}
-
-struct MainTabView: View {
-    @State private var selectedTab: AppTab = .tasks
-
-    var body: some View {
-        TabView(selection: $selectedTab) {
-            TaskListView()
-                .tabItem { Label("Tasks", systemImage: "checklist") }
-                .tag(AppTab.tasks)
-            SettingsView()
-                .tabItem { Label("Settings", systemImage: "gear") }
-                .tag(AppTab.settings)
-        }
-    }
-}
