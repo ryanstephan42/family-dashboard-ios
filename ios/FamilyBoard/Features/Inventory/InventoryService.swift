@@ -32,12 +32,33 @@ struct InventoryService {
         _ = try await client.send("DELETE", path(id))
     }
 
+    func lookupBarcode(_ code: String) async throws -> InventoryBarcodeProduct {
+        let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty, code.count <= 128,
+              code.rangeOfCharacter(from: .controlCharacters) == nil else {
+            throw InventoryValidationError(message: "Enter a barcode of up to 128 characters.")
+        }
+        return try await client.request("GET", APIClient.path("inventory", "barcode", code))
+    }
+
+    func uploadPhoto(id: String, data: Data) async throws -> InventoryItem {
+        guard !data.isEmpty, data.count <= InventoryPhoto.maximumBytes else {
+            throw InventoryValidationError(message: "Choose a photo smaller than 10 MB.")
+        }
+        return try await client.upload(
+            "POST", path(id) + "/photo", fieldName: "photo",
+            filename: "inventory.jpg", mimeType: "image/jpeg", data: data
+        )
+    }
+
+    func deletePhoto(id: String) async throws -> InventoryItem {
+        try await client.request("DELETE", path(id) + "/photo")
+    }
+
     private func path(_ id: String) throws -> String {
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove(charactersIn: "/?#%")
-        guard !id.isEmpty, let encoded = id.addingPercentEncoding(withAllowedCharacters: allowed) else {
+        guard !id.isEmpty else {
             throw InventoryValidationError(message: "The inventory item has an invalid identifier.")
         }
-        return "/inventory/" + encoded
+        return APIClient.path("inventory", id)
     }
 }

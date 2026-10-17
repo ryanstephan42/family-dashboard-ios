@@ -16,6 +16,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_CFBundleDisplayName: Family Board
+        INFOPLIST_KEY_NSCameraUsageDescription: Take inventory item photos and scan product barcodes to look up items before saving.
         SWIFT_VERSION: "5.0"
         CODE_SIGN_STYLE: Automatic
   FamilyBoardTests:
