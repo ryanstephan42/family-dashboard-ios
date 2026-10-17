@@ -161,7 +161,7 @@ struct TaskListView: View {
         } catch is CancellationError {
             return
         } catch APIError.unauthorized {
-            session.logout()
+            return
         } catch {
             guard !Task.isCancelled, requestedFilter == filter else { return }
             tasks = []
@@ -177,7 +177,7 @@ struct TaskListView: View {
             try await operation(TaskService(client: client))
             await load()
         } catch APIError.unauthorized {
-            session.logout()
+            return
         } catch {
             self.error = error.localizedDescription
         }

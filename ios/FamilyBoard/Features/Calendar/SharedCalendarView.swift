@@ -75,7 +75,7 @@ struct SharedCalendarView: View {
         } catch let error as URLError where error.code == .cancelled {
             return
         } catch APIError.unauthorized {
-            session.logout()
+            return
         } catch {
             state = .failed(error.localizedDescription)
         }
