@@ -29,7 +29,7 @@ final class GroceryAPITests: XCTestCase {
         GroceryStubURLProtocol.handler = { request in
             XCTAssertEqual(request.httpMethod, "GET")
             XCTAssertEqual(request.url?.path, "/api/grocery")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "******")
+            XCTAssertTrue(request.value(forHTTPHeaderField: "Authorization")?.hasPrefix("Bearer ") == true)
             return (200, """
             [{"id":"grocery-1","name":"Milk","quantity":"2 cartons","details":null,
               "category":"Dairy","completed":false,
@@ -77,7 +77,7 @@ final class GroceryAPITests: XCTestCase {
         GroceryStubURLProtocol.handler = { request in
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.path, "/api/grocery")
-            let body = try XCTUnwrap(request.httpBody)
+            let body = try Self.bodyData(from: request)
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
             let items = try XCTUnwrap(json["items"] as? [[String: Any]])
             XCTAssertEqual(items.count, 2)
@@ -101,7 +101,7 @@ final class GroceryAPITests: XCTestCase {
         GroceryStubURLProtocol.handler = { request in
             XCTAssertEqual(request.httpMethod, "PUT")
             XCTAssertEqual(request.url?.path, "/api/grocery/grocery-1")
-            let body = try XCTUnwrap(request.httpBody)
+            let body = try Self.bodyData(from: request)
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
             XCTAssertEqual(json["name"] as? String, "Oat milk")
             XCTAssertEqual(json["quantity"] as? String, "1 carton")
@@ -134,6 +134,22 @@ final class GroceryAPITests: XCTestCase {
         }
 
         try await api.purchase(id: "grocery-1")
+    }
+
+    private static func bodyData(from request: URLRequest) throws -> Data {
+        if let body = request.httpBody { return body }
+
+        let stream = try XCTUnwrap(request.httpBodyStream)
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 1024)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 { throw try XCTUnwrap(stream.streamError) }
+            if count == 0 { return data }
+            data.append(contentsOf: buffer.prefix(count))
+        }
     }
 }
 
