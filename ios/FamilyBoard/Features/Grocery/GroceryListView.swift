@@ -48,7 +48,7 @@ struct GroceryListView: View {
                         .padding(.vertical, 10)
                         .background(.regularMaterial, in: Capsule())
                         .padding(.bottom, 8)
-                        .accessibilityLiveRegion(.polite)
+                        .accessibilityLabel("Saving grocery changes")
                 }
             }
             .navigationTitle("Groceries")
