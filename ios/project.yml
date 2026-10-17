@@ -1,0 +1,20 @@
+# Generate the Xcode project on the Mac with: brew install xcodegen && xcodegen
+# Change DEVELOPMENT_TEAM / bundle ID here when switching to a paid account.
+name: FamilyBoard
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  FamilyBoard:
+    type: application
+    platform: iOS
+    sources: [FamilyBoard]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.familyboard
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Family Board
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
