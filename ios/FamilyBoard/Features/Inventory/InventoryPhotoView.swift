@@ -183,7 +183,7 @@ enum InventoryCameraAccess {
     }
 }
 
-private struct InventoryCameraPicker: UIViewControllerRepresentable {
+struct InventoryCameraPicker: UIViewControllerRepresentable {
     let onCapture: (UIImage?) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onCapture: onCapture) }
