@@ -84,19 +84,19 @@ struct ReceiptScanView: View {
                         return try Self.receiptImage(Data(contentsOf: url))
                     }
                 }
-                .sheet(isPresented: $showingCamera) {
-                    InventoryCameraPicker { image in
-                        showingCamera = false
-                        guard let image else { return }
-                        operation = Task {
-                            await model.loadImage { try Self.receiptImage(image) }
-                        }
-                    }
-                    .ignoresSafeArea()
-                }
             case .failure(let error):
                 model.error = error.localizedDescription
             }
+        }
+        .sheet(isPresented: $showingCamera) {
+            InventoryCameraPicker { image in
+                showingCamera = false
+                guard let image else { return }
+                operation = Task {
+                    await model.loadImage { try Self.receiptImage(image) }
+                }
+            }
+            .ignoresSafeArea()
         }
         .onChange(of: model.savedCount) { _, count in
             if count != nil { onImported() }
