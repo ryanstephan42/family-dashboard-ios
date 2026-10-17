@@ -1,7 +1,8 @@
 # iOS app (SwiftUI)
 
 Native iPhone client in `ios/`. It talks to the server only through the
-HTTPS `/api` (see [API.md](API.md)). Chat and Budget are out of scope for v1.
+HTTPS `/api` (see [API.md](docs/API.md)). The goal is native SwiftUI parity with
+the family-task-board webapp; Chat and Budget are out of scope for v1.
 
 ## Build on a Mac (free Apple ID)
 1. Install Xcode 26 or newer (needed to run on iOS 26.x; the Mac must run a macOS version that supports it) and [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`.
@@ -14,6 +15,21 @@ HTTPS `/api` (see [API.md](API.md)). Chat and Budget are out of scope for v1.
 
 When you upgrade to the paid program, only the signing team (and optionally
 bundle ID) changes; then use TestFlight, widgets, and push.
+
+## CI and unit tests
+The **iOS CI** GitHub Actions workflow generates the project, builds the app
+and runs unit tests on an available iPhone simulator with signing disabled.
+It runs on pushes and pull requests and can also be started manually.
+The simulator's `.xcresult` bundle is uploaded as `ios-test-results`.
+
+On a Mac, generate the project as above, then run:
+```sh
+cd ios
+xcodebuild test -project FamilyBoard.xcodeproj -scheme FamilyBoard \
+  -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO
+```
+Choose an installed simulator name from `xcrun simctl list devices available`.
+Tests use a stubbed URL session; no real server or credentials are required.
 
 ## Server notes
 - `JWT_SECRET` must be set; the server no longer falls back to a default.

@@ -22,6 +22,7 @@ enum APIError: LocalizedError {
 struct APIClient {
     let baseURL: URL
     var token: String?
+    var session: URLSession = .shared
 
     private static let decoder: JSONDecoder = {
         let d = JSONDecoder()
@@ -65,7 +66,7 @@ struct APIClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try JSONEncoder().encode(AnyEncodable(body))
         }
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if status == 401 || status == 403 { throw APIError.unauthorized }
         guard (200..<300).contains(status) else {

@@ -8,8 +8,13 @@ final class APIClientTests: XCTestCase {
     }
 
     func testNormalizeTrimsSlashesAndWhitespace() {
-        XCTAssertEqual(APIClient.normalize("  http://host:3000//  ")?.absoluteString,
-                       "http://host:3000")
+        XCTAssertEqual(APIClient.normalize("  http://family.example.com:3000//  ")?.absoluteString,
+                       "http://family.example.com:3000")
+    }
+
+    func testNormalizePreservesBasePath() {
+        XCTAssertEqual(APIClient.normalize("https://family.example.com/board/")?.absoluteString,
+                       "https://family.example.com/board")
     }
 
     func testNormalizeRejectsEmpty() {
@@ -17,7 +22,7 @@ final class APIClientTests: XCTestCase {
     }
 
     func testNormalizeRejectsOtherSchemes() {
-        XCTAssertNil(APIClient.normalize("ftp://host"))
+        XCTAssertNil(APIClient.normalize("ftp://family.example.com"))
     }
 
     func testErrorDescriptions() {
