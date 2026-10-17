@@ -63,28 +63,7 @@ struct GroceryListView: View {
                     }
                 } else {
                     if !suggestions.isEmpty {
-                        Section("Running low") {
-                            ForEach(suggestions, id: \.name) { suggestion in
-                                Button {
-                                    Task { await addSuggestion(suggestion) }
-                                } label: {
-                                    Label {
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(suggestion.name)
-                                                .foregroundStyle(.primary)
-                                            Text(suggestion.reason)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    } icon: {
-                                        Image(systemName: "plus.circle.fill")
-                                            .foregroundStyle(.orange)
-                                    }
-                                }
-                                .disabled(isMutating)
-                                .accessibilityHint("Add this low-stock item to the grocery list")
-                            }
-                        }
+                        suggestionsSection
                     }
 
                     if items.isEmpty {
@@ -246,6 +225,34 @@ struct GroceryListView: View {
                     Text("Separate items with commas or new lines.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+
+                private var suggestionsSection: some View {
+                    Section("Running low") {
+                        ForEach(suggestions, id: \.name) { suggestion in
+                            suggestionRow(suggestion)
+                        }
+                    }
+                }
+
+                private func suggestionRow(_ suggestion: GrocerySuggestion) -> some View {
+                    Button {
+                        Task { await addSuggestion(suggestion) }
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(suggestion.name)
+                                    .foregroundStyle(.primary)
+                                Text(suggestion.reason)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .disabled(isMutating)
+                    .accessibilityHint("Add this low-stock item to the grocery list")
                 }
             }
             .navigationTitle("Add groceries")
