@@ -31,6 +31,20 @@ xcodebuild test -project FamilyBoard.xcodeproj -scheme FamilyBoard \
 Choose an installed simulator name from `xcrun simctl list devices available`.
 Tests use a stubbed URL session; no real server or credentials are required.
 
+## Shared app foundation
+Use `session.client` for authenticated requests: HTTP 401/403 clears the saved
+session and returns to sign-in. Expired responses from an older sign-in cannot
+clear a newer session. The token, signed-in user and server address are saved
+together in the Keychain; legacy token-only installs require signing in again.
+Keychain failures are shown instead of treating an unsuccessful save as a login.
+
+`APIClient.request` decodes JSON; `send` handles empty responses. Both accept
+`query: [URLQueryItem]`; use `APIClient.path("inventory", id, "photo")` to encode
+dynamic path components. `upload` decodes multipart responses and `sendUpload`
+returns raw data. Both use the same authenticated transport and error handling.
+`LoadingStateView(title:)` and `ErrorStateView(message:retry:)` are shared native
+loading and retry views. Each tab owns its own `NavigationStack`.
+
 ## Server notes
 - `JWT_SECRET` must be set; the server no longer falls back to a default.
 - `GET /api/users` now requires a token.
