@@ -226,34 +226,6 @@ struct GroceryListView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-
-                private var suggestionsSection: some View {
-                    Section("Running low") {
-                        ForEach(suggestions, id: \.name) { suggestion in
-                            suggestionRow(suggestion)
-                        }
-                    }
-                }
-
-                private func suggestionRow(_ suggestion: GrocerySuggestion) -> some View {
-                    Button {
-                        Task { await addSuggestion(suggestion) }
-                    } label: {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundStyle(.orange)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(suggestion.name)
-                                    .foregroundStyle(.primary)
-                                Text(suggestion.reason)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .disabled(isMutating)
-                    .accessibilityHint("Add this low-stock item to the grocery list")
-                }
             }
             .navigationTitle("Add groceries")
             .navigationBarTitleDisplayMode(.inline)
@@ -267,6 +239,34 @@ struct GroceryListView: View {
                 }
             }
         }
+    }
+
+    private var suggestionsSection: some View {
+        Section("Running low") {
+            ForEach(suggestions, id: \.name) { suggestion in
+                suggestionRow(suggestion)
+            }
+        }
+    }
+
+    private func suggestionRow(_ suggestion: GrocerySuggestion) -> some View {
+        Button {
+            Task { await addSuggestion(suggestion) }
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(suggestion.name)
+                        .foregroundStyle(.primary)
+                    Text(suggestion.reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .disabled(isMutating)
+        .accessibilityHint("Add this low-stock item to the grocery list")
     }
 
     private var editSheet: some View {
