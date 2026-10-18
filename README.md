@@ -92,7 +92,9 @@ The system Photos picker shares only the selected image, not the entire library;
 the file picker accepts JPEG/PNG receipts. Barcode scanning needs compatible
 physical hardware and is not supported by the simulator.
 
-Inventory photos upload when saved. Receipt images upload only after tapping
+Inventory photo selection uploads immediately for an existing item, independently
+of the item editor's Save/Cancel buttons. New items must be saved first.
+Receipt images upload only after tapping
 **Scan Receipt**; the server may forward them to a cloud AI provider. Review
 items before importing and avoid sensitive receipts unless you accept the
 server/provider's data handling. The shared calendar loads Nextcloud content
@@ -109,6 +111,9 @@ This client does not implement analytics, push notifications or background sync.
   itself protected.
 
 ## Release readiness
+Core lists support scoped, read-only offline snapshots with visible staleness.
+See [offline behavior](docs/OFFLINE.md) for fallback rules and cache clearing.
+
 See [the release checklist](docs/RELEASE_CHECKLIST.md) for simulator coverage and
 the physical-device/live-server acceptance checks still required before release.
 CI success does not verify a real household server, device permissions, signing,
