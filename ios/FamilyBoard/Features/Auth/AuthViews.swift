@@ -14,6 +14,8 @@ struct ServerSetupView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
+                        .textContentType(.URL)
+                        .disabled(busy)
                 }
                 if let error { Text(error).foregroundStyle(.red) }
                 Button(busy ? "Connecting…" : "Connect") {
@@ -24,6 +26,7 @@ struct ServerSetupView: View {
                         busy = false
                     }
                 }.disabled(address.isEmpty || busy)
+                if busy { ProgressView("Checking server compatibility") }
             }
             .navigationTitle("Connect")
         }
@@ -43,7 +46,11 @@ struct LoginView: View {
                 TextField("Username", text: $username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .textContentType(.username)
+                    .disabled(busy)
                 SecureField("Password", text: $password)
+                    .textContentType(.password)
+                    .disabled(busy)
                 if let error { Text(error).foregroundStyle(.red) }
                 Button(busy ? "Signing in…" : "Sign in") {
                     Task {
@@ -54,6 +61,8 @@ struct LoginView: View {
                     }
                 }.disabled(username.isEmpty || password.isEmpty || busy)
                 Button("Change server", role: .destructive) { session.changeServer() }
+                    .disabled(busy)
+                if busy { ProgressView("Signing in") }
             }
             .navigationTitle("Sign in")
         }

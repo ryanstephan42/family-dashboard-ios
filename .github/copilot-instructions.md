@@ -6,9 +6,10 @@ household hub (repo: `ryanstephan42/family-task-board`, private). The server is
 Express + Prisma + SQLite; this app only talks to it over HTTPS at
 `https://<server>/api` with a JWT (`Authorization: Bearer <jwt>` header).
 The API contract is in `docs/API.md`. The authoritative source is the server
-code in `server/src/routes/*.ts` of the private repo, which you cannot see:
-if a request/response shape is unclear, ask the user for sample JSON rather
-than guessing.
+code in `server/src/routes/*.ts` of the private repo. When the user provides
+a local checkout of family-task-board, use it as a read-only reference for
+API shapes and webapp behavior. If neither source nor sample JSON is
+available for an unclear shape, ask the user rather than guessing.
 
 ## Decisions already made
 - SwiftUI, iOS 17+ deployment target (user's phone runs iOS 26.7), no

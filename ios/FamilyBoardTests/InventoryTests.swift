@@ -1,0 +1,350 @@
+import XCTest
+@testable import FamilyBoard
+
+final class InventoryTests: XCTestCase {
+    private var session: URLSession!
+    private var service: InventoryService!
+
+    override func setUpWithError() throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [InventoryStubURLProtocol.self]
+        session = URLSession(configuration: configuration)
+        service = InventoryService(client: APIClient(
+            baseURL: try XCTUnwrap(URL(string: "https://family.example.com")),
+            token: "inventory-test", session: session
+        ))
+    }
+
+    override func tearDown() {
+        session.invalidateAndCancel()
+        session = nil
+        service = nil
+        InventoryStubURLProtocol.handler = nil
+        super.tearDown()
+    }
+
+    func testListDecodesFractionalQuantitiesNullableFieldsAndBothDateFormats() async throws {
+        for date in ["2026-10-20T00:00:00.000Z", "2026-10-20T00:00:00Z"] {
+            InventoryStubURLProtocol.handler = { request in
+                XCTAssertEqual(request.url?.path, "/api/inventory")
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer inventory-test")
+                return (200, "[\(Self.itemJSON(purchaseDate: date))]")
+            }
+            let items = try await service.items()
+            let item = try XCTUnwrap(items.first)
+            XCTAssertEqual(item.quantity, 1.5)
+            XCTAssertEqual(item.purchaseDate.timeIntervalSince1970, 1_792_454_400)
+            XCTAssertNil(item.unit)
+            XCTAssertNil(item.expirationDate)
+            XCTAssertNil(item.photoUrl)
+            XCTAssertNil(item.barcode)
+            XCTAssertTrue(item.isRunningLow)
+        }
+    }
+
+    func testCreateUsesBulkEnvelopeAndISODateStrings() async throws {
+        let draft = InventoryDraft()
+        var filled = draft
+        filled.name = " Rice "
+        filled.unit = " bags "
+        filled.purchaseDate = Date(timeIntervalSince1970: 1_792_454_400)
+        InventoryStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/inventory")
+            let json = try Self.body(request)
+            XCTAssertNil(json["name"])
+            let items = try XCTUnwrap(json["items"] as? [[String: Any]])
+            XCTAssertEqual(items.count, 1)
+            XCTAssertEqual(items[0]["name"] as? String, "Rice")
+            XCTAssertEqual(items[0]["unit"] as? String, "bags")
+            XCTAssertEqual(items[0]["purchaseDate"] as? String, "2026-10-20T00:00:00.000Z")
+            XCTAssertTrue(items[0]["parLevel"] is NSNull)
+            XCTAssertTrue(items[0]["expirationDate"] is NSNull)
+            return (201, "[\(Self.itemJSON())]")
+        }
+        let saved = try await service.create(filled)
+        XCTAssertEqual(saved.count, 1)
+    }
+
+    func testUpdateClearsNullableValuesAndPreservesFractionalQuantity() async throws {
+        var draft = InventoryDraft()
+        draft.name = "Rice"
+        draft.quantity = "0.5"
+        draft.trackExpiration = false
+        draft.hasExpirationDate = true
+        InventoryStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "PUT")
+            XCTAssertEqual(request.url?.path, "/api/inventory/item-1")
+            let body = try Self.body(request)
+            XCTAssertEqual(body["quantity"] as? Double, 0.5)
+            XCTAssertEqual(body["trackExpiration"] as? Bool, false)
+            XCTAssertTrue(body["expirationDate"] is NSNull)
+            XCTAssertTrue(body["parLevel"] is NSNull)
+            return (200, Self.itemJSON())
+        }
+        _ = try await service.update(id: "item-1", draft: draft)
+    }
+
+    func testUpdateWritesChosenExpirationAndParLevel() throws {
+        var draft = InventoryDraft()
+        draft.name = "Milk"
+        draft.hasExpirationDate = true
+        draft.expirationDate = Date(timeIntervalSince1970: 1_792_454_400)
+        draft.parLevel = "2.5"
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(draft.payload())
+        ) as? [String: Any])
+        XCTAssertEqual(json["expirationDate"] as? String, "2026-10-20T00:00:00.000Z")
+        XCTAssertEqual(json["parLevel"] as? Double, 2.5)
+    }
+
+    func testQuantityAndDeleteRequests() async throws {
+        InventoryStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            XCTAssertEqual(request.url?.path, "/api/inventory/item-1/quantity")
+            XCTAssertEqual(try Self.body(request)["delta"] as? Double, -1)
+            return (200, Self.itemJSON())
+        }
+        _ = try await service.adjust(id: "item-1", delta: -1)
+        InventoryStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            XCTAssertEqual(request.url?.path, "/api/inventory/item-1")
+            return (200, #"{"message":"Inventory item removed"}"#)
+        }
+        try await service.delete(id: "item-1")
+    }
+
+    func testUnitPreferencesAndLearnedOptions() async throws {
+        InventoryStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/api/inventory/unit-options")
+            return (200, #"{"commonUnits":["each","bag"],"preferences":[{"id":"p1","itemName":"rice","unit":"bag"}]}"#)
+        }
+        let options = try await service.unitOptions()
+        XCTAssertEqual(options.commonUnits, ["each", "bag"])
+        XCTAssertEqual(options.preferredUnit(for: " Rice "), "bag")
+        XCTAssertNil(options.preferredUnit(for: "Milk"))
+    }
+
+    func testValidationRejectsEmptyNegativeAndNonfiniteInput() throws {
+        var draft = InventoryDraft()
+        XCTAssertNotNil(draft.validationMessage)
+        draft.name = "Rice"
+        for quantity in ["", "-1", "nan", "inf", "1,5"] {
+            draft.quantity = quantity
+            XCTAssertThrowsError(try draft.payload(), quantity)
+        }
+        draft.quantity = "0"
+        XCTAssertNil(draft.validationMessage)
+        for parLevel in ["-1", "nan", "inf", "many"] {
+            draft.parLevel = parLevel
+            XCTAssertThrowsError(try draft.payload(), parLevel)
+        }
+        draft.parLevel = ""
+        draft.location = " "
+        XCTAssertThrowsError(try draft.payload())
+    }
+
+    func testInvalidAdjustmentDoesNotSendRequest() async {
+        InventoryStubURLProtocol.handler = { _ in
+            XCTFail("Invalid input must not reach server")
+            return (200, Self.itemJSON())
+        }
+        for delta in [0, Double.nan, Double.infinity] {
+            do {
+                _ = try await service.adjust(id: "item-1", delta: delta)
+                XCTFail("Expected validation error")
+            } catch is InventoryValidationError {}
+            catch { XCTFail("Unexpected error: \(error)") }
+        }
+    }
+
+    func testFiltersSearchAllWebappFieldsAndHonorParBoundary() async throws {
+        InventoryStubURLProtocol.handler = { _ in (200, "[\(Self.itemJSON())]") }
+        let items = try await service.items()
+        let item = try XCTUnwrap(items.first)
+        var filter = InventoryFilter()
+        for query in ["rice", "GENERAL", "pantry", "sealed"] {
+            filter.search = query
+            XCTAssertTrue(filter.matches(item))
+        }
+        filter.search = "milk"
+        XCTAssertFalse(filter.matches(item))
+        filter.search = ""
+        filter.runningLow = true
+        XCTAssertTrue(filter.matches(item))
+        filter.location = "Fridge"
+        XCTAssertFalse(filter.matches(item))
+        filter.location = ""
+        filter.category = "Dairy"
+        XCTAssertFalse(filter.matches(item))
+    }
+
+    func testExpirationFiltersHaveInclusiveFourteenDayBoundary() async throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = Date(timeIntervalSince1970: 1_792_454_400)
+        for (offset, soon, expired) in [(-1, false, true), (0, true, false), (14, true, false), (15, false, false)] {
+            let date = try XCTUnwrap(calendar.date(byAdding: .day, value: offset, to: now))
+            let string = ISO8601DateFormatter().string(from: date)
+            let json = Self.itemJSON().replacingOccurrences(of: #""expirationDate":null"#, with: "\"expirationDate\":\"\(string)\"")
+            InventoryStubURLProtocol.handler = { _ in (200, "[\(json)]") }
+            let items = try await service.items()
+            let item = try XCTUnwrap(items.first)
+            var filter = InventoryFilter()
+            filter.expiration = .soon
+            XCTAssertEqual(filter.matches(item, now: now, calendar: calendar), soon)
+            filter.expiration = .expired
+            XCTAssertEqual(filter.matches(item, now: now, calendar: calendar), expired)
+        }
+    }
+
+    func testUnauthorizedAndServerErrorsPropagate() async throws {
+        for status in [401, 403, 422] {
+            InventoryStubURLProtocol.handler = { _ in (status, #"{"error":"Inventory unavailable"}"#) }
+            do {
+                _ = try await service.items()
+                XCTFail("Expected error")
+            } catch APIError.unauthorized {
+                XCTAssertTrue([401, 403].contains(status))
+            } catch APIError.server(let code, let message) {
+                XCTAssertEqual(code, 422)
+                XCTAssertEqual(message, "Inventory unavailable")
+            }
+        }
+    }
+
+    func testBarcodeLookupEncodesCodeAndNeverCreatesInventory() async throws {
+        InventoryStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.absoluteString, "https://family.example.com/api/inventory/barcode/00%2F12%3F%23%25")
+            return (200, #"{"barcode":"00/12?#%","name":"Rice","category":"Grains","unit":"bag","source":"memory"}"#)
+        }
+        let product = try await service.lookupBarcode(" 00/12?#% ")
+        XCTAssertEqual(product.name, "Rice")
+        XCTAssertEqual(product.barcode, "00/12?#%")
+        XCTAssertEqual(product.source, "memory")
+    }
+
+    func testPhotoUploadUsesMultipartPhotoFieldAndDeletionReturnsUpdatedItem() async throws {
+        let bytes = Data([0xff, 0xd8, 0x00, 0xff, 0xd9])
+        InventoryStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/inventory/item-1/photo")
+            XCTAssertNotNil(request.value(forHTTPHeaderField: "Authorization"))
+            XCTAssertTrue(request.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("multipart/form-data; boundary=") == true)
+            let data = try Self.rawBody(request)
+            let header = Data("Content-Disposition: form-data; name=\"photo\"; filename=\"inventory.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8)
+            XCTAssertNotNil(data.range(of: header + bytes))
+            return (200, Self.itemJSON().replacingOccurrences(
+                of: #""photoUrl":null"#, with: #""photoUrl":"/uploads/photo.jpg""#
+            ))
+        }
+        let saved = try await service.uploadPhoto(id: "item-1", data: bytes)
+        XCTAssertEqual(saved.photoUrl, "/uploads/photo.jpg")
+        InventoryStubURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            XCTAssertEqual(request.url?.path, "/api/inventory/item-1/photo")
+            return (200, Self.itemJSON())
+        }
+        let deleted = try await service.deletePhoto(id: "item-1")
+        XCTAssertNil(deleted.photoUrl)
+    }
+
+    func testInvalidCaptureInputNeverSendsRequests() async throws {
+        InventoryStubURLProtocol.handler = { _ in
+            XCTFail("Invalid capture input must not reach server")
+            return (200, Self.itemJSON())
+        }
+        for code in [" ", String(repeating: "1", count: 129), "123\u{0}4"] {
+            do {
+                _ = try await service.lookupBarcode(code)
+                XCTFail("Expected invalid barcode")
+            } catch is InventoryValidationError {}
+        }
+        for data in [Data(), Data(repeating: 0, count: InventoryPhoto.maximumBytes + 1)] {
+            do {
+                _ = try await service.uploadPhoto(id: "item-1", data: data)
+                XCTFail("Expected invalid photo")
+            } catch is InventoryValidationError {}
+        }
+    }
+
+    func testPhotoSizeLimitIncludesExactlyTenMegabytes() async throws {
+        InventoryStubURLProtocol.handler = { _ in (200, Self.itemJSON()) }
+        _ = try await service.uploadPhoto(id: "item-1", data: Data(repeating: 0, count: InventoryPhoto.maximumBytes))
+    }
+
+    func testCaptureServerErrorsAreNotReportedAsSuccessfulUpdates() async throws {
+        for status in [401, 403, 404, 413, 500] {
+            InventoryStubURLProtocol.handler = { _ in (status, #"{"error":"Capture unavailable"}"#) }
+            for operation in 0..<3 {
+                do {
+                    switch operation {
+                    case 0: _ = try await service.lookupBarcode("0012345")
+                    case 1: _ = try await service.uploadPhoto(id: "item-1", data: Data([1]))
+                    default: _ = try await service.deletePhoto(id: "item-1")
+                    }
+                    XCTFail("Expected capture error")
+                } catch APIError.unauthorized {
+                    XCTAssertTrue([401, 403].contains(status))
+                } catch APIError.server(let code, let message) {
+                    XCTAssertEqual(code, status)
+                    XCTAssertEqual(message, "Capture unavailable")
+                }
+            }
+        }
+    }
+
+    private static func itemJSON(purchaseDate: String = "2026-10-20T00:00:00.000Z") -> String {
+        """
+        {"id":"item-1","name":"Rice","quantity":1.5,"unit":null,"category":"General",
+         "location":"Pantry","purchaseDate":"\(purchaseDate)","trackExpiration":true,
+         "expirationDate":null,"notes":"sealed","parLevel":1.5,"lowStock":false,
+         "photoUrl":null,"barcode":null}
+        """
+    }
+
+    private static func body(_ request: URLRequest) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: rawBody(request)) as? [String: Any])
+    }
+
+    private static func rawBody(_ request: URLRequest) throws -> Data {
+        let data: Data
+        if let body = request.httpBody { data = body }
+        else {
+            let stream = try XCTUnwrap(request.httpBodyStream)
+            stream.open()
+            defer { stream.close() }
+            var result = Data()
+            var buffer = [UInt8](repeating: 0, count: 1024)
+            while true {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count < 0 { throw try XCTUnwrap(stream.streamError) }
+                if count == 0 { break }
+                result.append(contentsOf: buffer.prefix(count))
+            }
+            data = result
+        }
+        return data
+    }
+}
+
+private final class InventoryStubURLProtocol: URLProtocol {
+    static var handler: ((URLRequest) throws -> (Int, String))?
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        do {
+            let (status, body) = try XCTUnwrap(Self.handler)(request)
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url), statusCode: status,
+                httpVersion: nil, headerFields: ["Content-Type": "application/json"]
+            ))
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(body.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        } catch { client?.urlProtocol(self, didFailWithError: error) }
+    }
+    override func stopLoading() {}
+}
