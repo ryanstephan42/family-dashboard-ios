@@ -1,6 +1,6 @@
 import Foundation
 
-struct InventoryItem: Decodable, Identifiable {
+struct InventoryItem: Codable, Identifiable {
     let id: String
     let name: String
     let quantity: Double
@@ -21,7 +21,7 @@ struct InventoryItem: Decodable, Identifiable {
     }
 }
 
-struct InventoryUnitOptions: Decodable {
+struct InventoryUnitOptions: Codable {
     let commonUnits: [String]
     let preferences: [InventoryUnitPreference]
 
@@ -31,7 +31,7 @@ struct InventoryUnitOptions: Decodable {
     }
 }
 
-struct InventoryUnitPreference: Decodable {
+struct InventoryUnitPreference: Codable {
     let itemName: String
     let unit: String
 }

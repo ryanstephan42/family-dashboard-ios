@@ -5,7 +5,7 @@ struct GroceryListView: View {
     @State private var items: [GroceryItem] = []
     @State private var preferences: [GroceryCategoryPreference] = []
     @State private var suggestions: [GrocerySuggestion] = []
-    @State private var isLoading = true
+    @State private var isLoading = false
     @State private var isMutating = false
     @State private var loadError: String?
     @State private var operationError: String?
@@ -18,6 +18,7 @@ struct GroceryListView: View {
     @State private var editQuantity = ""
     @State private var editCategory = ""
     @State private var editDetails = ""
+    @State private var cacheStatus: ReadCacheStatus?
 
     private var groceryAPI: GroceryAPI? {
         session.client.map { GroceryAPI(client: $0) }
@@ -58,7 +59,7 @@ struct GroceryListView: View {
                         Button("Clear completed", systemImage: "trash") {
                             showingClearConfirmation = true
                         }
-                        .disabled(isMutating)
+                        .disabled(isMutating || isLoading || cacheStatus?.isStale == true)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -68,7 +69,7 @@ struct GroceryListView: View {
                     } label: {
                         Label("Add groceries", systemImage: "plus")
                     }
-                    .disabled(isMutating)
+                    .disabled(isMutating || isLoading || cacheStatus?.isStale == true)
                 }
             }
             .refreshable { await load() }
@@ -208,6 +209,7 @@ struct GroceryListView: View {
 
     @ViewBuilder
     private var listContents: some View {
+        if let cacheStatus { CachedReadBanner(status: cacheStatus) }
         if isLoading && items.isEmpty && loadError == nil {
             HStack {
                 Spacer()
@@ -219,6 +221,7 @@ struct GroceryListView: View {
             loadErrorSection(loadError)
         } else {
             loadedListContents
+                .disabled(isLoading || isMutating || cacheStatus?.isStale == true)
         }
     }
 
@@ -326,6 +329,7 @@ struct GroceryListView: View {
     }
 
     private func load() async {
+        guard !isLoading else { return }
         guard let groceryAPI else {
             loadError = APIError.invalidURL.localizedDescription
             isLoading = false
@@ -334,16 +338,24 @@ struct GroceryListView: View {
         isLoading = true
         loadError = nil
         do {
-            async let loadedItems = groceryAPI.fetchItems()
-            async let loadedPreferences = groceryAPI.fetchPreferences()
-            async let loadedSuggestions = groceryAPI.fetchSuggestions()
-            let (items, preferences, suggestions) = try await (
-                loadedItems, loadedPreferences, loadedSuggestions
-            )
-            self.items = items
-            self.preferences = preferences
-            self.suggestions = suggestions
+            let result = try await session.read(path: "/grocery") {
+                async let items = groceryAPI.fetchItems()
+                async let preferences = groceryAPI.fetchPreferences()
+                async let suggestions = groceryAPI.fetchSuggestions()
+                return try await GrocerySnapshot(items: items, preferences: preferences, suggestions: suggestions)
+            }
+            self.items = result.value.items
+            self.preferences = result.value.preferences
+            self.suggestions = result.value.suggestions
+            cacheStatus = result.status
+        } catch is CancellationError {
+            isLoading = false
+            return
         } catch {
+            items = []
+            preferences = []
+            suggestions = []
+            cacheStatus = nil
             handle(error, loading: true)
         }
         isLoading = false
@@ -455,7 +467,7 @@ struct GroceryListView: View {
     }
 
     private func performMutation(_ operation: () async throws -> Void) async {
-        guard !isMutating else { return }
+        guard !isMutating, cacheStatus?.isStale != true else { return }
         isMutating = true
         operationError = nil
         do {
@@ -482,5 +494,11 @@ struct GroceryListView: View {
         return preferences.first {
             $0.itemName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedName
         }?.category
+    }
+
+    private struct GrocerySnapshot: Codable {
+        let items: [GroceryItem]
+        let preferences: [GroceryCategoryPreference]
+        let suggestions: [GrocerySuggestion]
     }
 }

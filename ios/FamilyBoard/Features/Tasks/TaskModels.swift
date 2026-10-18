@@ -47,7 +47,7 @@ enum TaskStatus: String, CaseIterable, Identifiable {
     }
 }
 
-struct BoardTask: Decodable, Identifiable {
+struct BoardTask: Codable, Identifiable {
     let id: String
     let title: String
     let description: String?

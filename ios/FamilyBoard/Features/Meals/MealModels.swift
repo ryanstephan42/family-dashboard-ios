@@ -1,12 +1,12 @@
 import Foundation
 
-struct MealStatus: Decodable {
+struct MealStatus: Codable {
     let configured: Bool
     let online: Bool
     let error: String?
 }
 
-struct MealSummary: Decodable, Identifiable {
+struct MealSummary: Codable, Identifiable {
     let slug: String
     let name: String
     let image: String?
