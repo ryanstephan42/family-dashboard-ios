@@ -8,6 +8,7 @@ struct MealsListView: View {
     @State private var loading = false
     @State private var loaded = false
     @State private var errorMessage: String?
+    @State private var cacheStatus: ReadCacheStatus?
 
     private var visibleMeals: [MealSummary] {
         MealSummary.filtered(meals, search: search)
@@ -16,6 +17,7 @@ struct MealsListView: View {
     var body: some View {
         NavigationStack {
             List {
+                if let cacheStatus { CachedReadBanner(status: cacheStatus) }
                 if let errorMessage {
                     Section {
                         Text(errorMessage).foregroundStyle(.red)
@@ -61,6 +63,7 @@ struct MealsListView: View {
                                     }
                                 }
                             }
+                            .disabled(loading || cacheStatus?.isStale == true)
                         }
                     } header: {
                         Text("What can I make?")
@@ -80,7 +83,7 @@ struct MealsListView: View {
                 .disabled(loading)
             }
             .refreshable { await load() }
-            .task { if !loaded { await load() } }
+            .task { await load() }
         }
     }
 
@@ -92,18 +95,41 @@ struct MealsListView: View {
         do {
             guard let client = session.client else { throw APIError.unauthorized }
             let service = MealsService(client: client)
-            let currentStatus = try await service.status()
-            status = currentStatus
-            if currentStatus.configured && currentStatus.online {
-                meals = try await service.meals()
-            } else {
-                meals = []
+            let result = try await session.read(path: "/meals/what-can-i-make") {
+                let status = try await service.status()
+                guard status.configured && status.online else {
+                    throw MealAvailabilityError.unavailable(status)
+                }
+                return try await MealSnapshot(status: status, meals: service.meals())
             }
+            status = result.value.status
+            meals = result.value.meals
+            cacheStatus = result.status
             loaded = true
         } catch is CancellationError {
             return
+        } catch MealAvailabilityError.unavailable(let currentStatus) {
+            status = currentStatus
+            meals = []
+            cacheStatus = nil
+            loaded = true
+        } catch APIError.unauthorized {
+            return
         } catch {
+            status = nil
+            meals = []
+            cacheStatus = nil
+            loaded = false
             errorMessage = error.localizedDescription
         }
+    }
+
+    private struct MealSnapshot: Codable {
+        let status: MealStatus
+        let meals: [MealSummary]
+    }
+
+    private enum MealAvailabilityError: Error {
+        case unavailable(MealStatus)
     }
 }

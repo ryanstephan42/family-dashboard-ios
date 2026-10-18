@@ -10,6 +10,7 @@ struct TaskListView: View {
     @State private var error: String?
     @State private var editor: TaskEditorSelection?
     @State private var deleting: BoardTask?
+    @State private var cacheStatus: ReadCacheStatus?
 
     var body: some View {
         NavigationStack {
@@ -19,6 +20,7 @@ struct TaskListView: View {
                 }
                 .pickerStyle(.menu)
                 .disabled(working)
+                if let cacheStatus { CachedReadBanner(status: cacheStatus) }
                 if let error {
                     VStack(spacing: 8) {
                         Text(error).foregroundStyle(.red)
@@ -37,7 +39,7 @@ struct TaskListView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("New task", systemImage: "plus") { editor = TaskEditorSelection(task: nil) }
-                        .disabled(working)
+                        .disabled(working || loading || cacheStatus?.isStale == true)
                 }
             }
             .overlay(alignment: .bottom) {
@@ -85,7 +87,7 @@ struct TaskListView: View {
                 ForEach(tasks) { row($0) }
             }
         }
-        .disabled(working)
+        .disabled(working || cacheStatus?.isStale == true)
         .refreshable { await load() }
     }
 
@@ -151,12 +153,15 @@ struct TaskListView: View {
         defer { if requestedFilter == filter { loading = false } }
         do {
             let service = TaskService(client: client)
-            async let fetchedTasks = service.tasks(filter: requestedFilter)
-            async let fetchedUsers = service.users()
-            let result = try await (fetchedTasks, fetchedUsers)
+            let result = try await session.read(path: requestedFilter.path) {
+                async let fetchedTasks = service.tasks(filter: requestedFilter)
+                async let fetchedUsers = service.users()
+                return try await TaskSnapshot(tasks: fetchedTasks, users: fetchedUsers)
+            }
             guard !Task.isCancelled, requestedFilter == filter else { return }
-            tasks = result.0
-            users = result.1
+            tasks = result.value.tasks
+            users = result.value.users
+            cacheStatus = result.status
             error = nil
         } catch is CancellationError {
             return
@@ -165,12 +170,14 @@ struct TaskListView: View {
         } catch {
             guard !Task.isCancelled, requestedFilter == filter else { return }
             tasks = []
+            users = []
+            cacheStatus = nil
             self.error = error.localizedDescription
         }
     }
 
     private func mutate(_ operation: (TaskService) async throws -> Void) async {
-        guard !working, let client = session.client else { return }
+        guard !working, cacheStatus?.isStale != true, let client = session.client else { return }
         working = true
         defer { working = false }
         do {
@@ -182,6 +189,11 @@ struct TaskListView: View {
             self.error = error.localizedDescription
         }
     }
+}
+
+private struct TaskSnapshot: Codable {
+    let tasks: [BoardTask]
+    let users: [User]
 }
 
 private struct TaskEditorSelection: Identifiable {

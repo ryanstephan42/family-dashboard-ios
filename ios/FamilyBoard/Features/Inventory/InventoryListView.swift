@@ -11,6 +11,7 @@ struct InventoryListView: View {
     @State private var errorMessage: String?
     @State private var editor: InventoryEditorSelection?
     @State private var pendingDelete: InventoryItem?
+    @State private var cacheStatus: ReadCacheStatus?
 
     private var visibleItems: [InventoryItem] {
         items.filter { filter.matches($0) }
@@ -26,6 +27,7 @@ struct InventoryListView: View {
 
     var body: some View {
         List {
+            if let cacheStatus { CachedReadBanner(status: cacheStatus) }
             if let errorMessage {
                 Section {
                     Text(errorMessage).foregroundStyle(.red)
@@ -67,6 +69,7 @@ struct InventoryListView: View {
                                 Button("Edit") { editor = InventoryEditorSelection(item: item) }
                                     .tint(.blue)
                             }
+                            .disabled(busy || loading || cacheStatus?.isStale == true)
                     }
                 }
             }
@@ -80,11 +83,11 @@ struct InventoryListView: View {
                 } label: {
                     Label("Add inventory item", systemImage: "plus")
                 }
-                .disabled(busy || loading)
+                .disabled(busy || loading || cacheStatus?.isStale == true)
             }
         }
         .refreshable { await load() }
-        .task { if !loaded { await load() } }
+        .task { await load() }
         .sheet(item: $editor) { selection in
             InventoryEditorView(item: selection.item, units: units, categories: categories, onPhotoChanged: replace) { draft in
                 guard let client = session.client else { throw APIError.unauthorized }
@@ -167,7 +170,7 @@ struct InventoryListView: View {
             }
             .buttonStyle(.borderless)
         }
-        .disabled(busy || loading)
+        .disabled(busy || loading || cacheStatus?.isStale == true)
     }
 
     @MainActor private func load() async {
@@ -181,10 +184,23 @@ struct InventoryListView: View {
         defer { loading = false }
         do {
             let service = InventoryService(client: client)
-            items = try await service.items()
+            let result = try await session.read(path: "/inventory") {
+                async let items = service.items()
+                async let units = service.unitOptions()
+                return try await InventorySnapshot(items: items, units: units)
+            }
+            items = result.value.items
+            units = result.value.units
+            cacheStatus = result.status
             loaded = true
-            units = try await service.unitOptions()
-        } catch { handle(error) }
+        } catch is CancellationError {
+            return
+        } catch {
+            items = []
+            loaded = false
+            cacheStatus = nil
+            handle(error)
+        }
     }
 
     @MainActor private func adjust(_ item: InventoryItem, delta: Double) async {
@@ -203,7 +219,7 @@ struct InventoryListView: View {
     }
 
     @MainActor private func mutate(_ operation: (InventoryService) async throws -> Void) async {
-        guard !busy, !loading else { return }
+        guard !busy, !loading, cacheStatus?.isStale != true else { return }
         guard let client = session.client else {
             handle(APIError.unauthorized)
             return
@@ -213,6 +229,11 @@ struct InventoryListView: View {
         defer { busy = false }
         do { try await operation(InventoryService(client: client)) }
         catch { handle(error) }
+    }
+
+    private struct InventorySnapshot: Codable {
+        let items: [InventoryItem]
+        let units: InventoryUnitOptions
     }
 
     private func replace(_ item: InventoryItem) {

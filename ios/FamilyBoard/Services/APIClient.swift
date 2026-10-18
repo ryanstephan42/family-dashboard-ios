@@ -28,6 +28,7 @@ struct APIClient {
     var token: String?
     var session: URLSession = .shared
     var onUnauthorized: (@MainActor () -> Void)?
+    var onMutation: (@MainActor () -> Void)?
 
     private static func makeDecoder() -> JSONDecoder {
         let d = JSONDecoder()
@@ -140,6 +141,7 @@ struct APIClient {
             let msg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
             throw APIError.server(status: status, message: msg)
         }
+        if req.httpMethod != "GET" { await onMutation?() }
         return data
     }
 
